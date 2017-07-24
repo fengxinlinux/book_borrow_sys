@@ -7,6 +7,7 @@
 
 #include<iostream>
 #include<cstring>
+#include<string>
 #include<sys/stat.h>
 #include<fcntl.h>
 #include<unistd.h>
@@ -30,6 +31,9 @@ using namespace std;
 #define EPOLL_SIZE  5000   //epoll监听客户端的最大数目
 
 
+
+
+
 class TCPServer
 {
     public: 
@@ -43,11 +47,14 @@ class TCPServer
     /// 关闭客户端
     void closeClient(int i);
     //处理接收到的数据
-    bool dealwithpacket(int conn_fd,unsigned char *recv_data,uint16_t wOpcode,int datasize);
+    bool dealwithpacket(TCPServer &server,int conn_fd,char *recv_data,uint16_t wOpcode,int datasize);
 
-    bool server_recv(int conn_fd);  //接收数据函数
+    bool server_recv(TCPServer &server,int conn_fd);  //接收数据函数
+    bool server_send(int conn_fd,char send_buf[10000],int datasize,uint16_t wOpcode); //发送数据函数
 
-    void run();  //运行函数
+    void run(TCPServer &server);  //运行函数
+    friend bool Login(int conn_fd,char * recv_data);    //登录函数 
+    friend bool Register(int conn_fd,char *recv_data);  //注册函数
 
     private:
 
@@ -115,6 +122,7 @@ TCPServer::TCPServer()  //构造函数
 TCPServer::~TCPServer()   //析构函数
 {
     close(sock_fd);    //关闭监听套接字
+    free(events);  //释放事件集空间
     cout<<"服务器成功退出"<<endl;
 }
 
@@ -143,7 +151,14 @@ void TCPServer::closeClient(int i)     //处理客户端退出
 
 }
 
-bool TCPServer::dealwithpacket(int conn_fd,unsigned char *recv_data,uint16_t wOpcode,int datasize)  //处理接收到的数据
+//函数声明:
+    //
+bool Login(TCPServer &server,int conn_fd,char *recv_data);   //登录处理函数
+bool Register(TCPServer &server,int conn_fd,char *recv_data);   //注册处理函数
+
+
+
+bool Login(TCPServer &server,int conn_fd,char *recv_data)   //登录
 {
     Json::Value accounts;
     Json::Reader reader;
@@ -155,30 +170,156 @@ bool TCPServer::dealwithpacket(int conn_fd,unsigned char *recv_data,uint16_t wOp
         return false;
 
     }
-    if(wOpcode==LOGIN)  //登录
+
+    MyDB db;
+    int flags=LOGIN_NO;
+    if(db.initDB("localhost","root","fengxin","book_borrow_sys")==false)  //连接数据库
     {
-        MyDB db;
-        if(db.initDB("localhost","root","fengxin","test"))  //连接数据库
+        cout<<"连接数据库失败"<<endl;
+        return false;
+    }
+
+
+    string sentence="select name,passwd from accounts;";
+    if(db.exeSQL(sentence)==false)
+    {
+        cout<<"执行sql语句失败"<<endl;
+        return false;
+    }
+    if(db.result)  //结果集中有数据
+    {
+        int num_fields=mysql_num_fields(db.result);   //获取结果集中总共字段数
+        int num_rows=mysql_num_rows(db.result);     //获取结果集中总共字段数集中总共行数
+        for(int i=0;i<num_rows;i++)
         {
-            cout<<"连接数据库失败"<<endl;
-            return false;
+            db.row=mysql_fetch_row(db.result);
+            if(db.row[0]==accounts["name"].asString())
+            {
+                if(db.row[1]==accounts["passwd"].asString())  //密码正确
+                {
+                    flags=LOGIN_YES;
+                    break;
+                }
+            }
         }
-
-
+    }
+    if(server.server_send(conn_fd,NULL,0,flags)==false)
+    {
+        cout<<"向客户端发送发送数据失败"<<endl;
+        return false;
     }
 
     return true;
 
 }
 
-bool TCPServer::server_recv(int conn_fd)  //接收数据函数
+bool Register(TCPServer &server,int conn_fd,char* recv_data)    //注册
+{
+    Json::Value accounts;
+    Json::Reader reader;
+    string str(recv_data);
+
+
+    if(reader.parse(str,accounts)<0)   //json解析失败
+    {
+        cout<<"json解析失败"<<endl;
+        return false;
+
+    }
+
+
+    MyDB db;
+    int flags=REGISTER_NO;
+    if(db.initDB("localhost","root","fengxin","book_borrow_sys")==false)  //连接数据库
+    {
+        cout<<"连接数据库失败"<<endl;
+        return false;
+    }
+    string sentence="select name,passwd from accounts where name=\"" + accounts["name"].asString()+"\";";
+   
+
+    if(db.exeSQL(sentence)==false)
+    {
+        cout<<"执行sql语句失败"<<endl;
+    }
+
+
+    if(db.result&&mysql_num_rows(db.result)==0)  //注册表中不存在该帐号
+    {
+        flags=REGISTER_YES;
+    }
+    else
+    {
+        flags=REGISTER_NO;
+    }
+    sentence.clear();
+    sentence="insert accounts (name,passwd) value(\""+accounts["name"].asString()+"\""+",\""+accounts["passwd"].asString()+"\");";
+    if(flags==REGISTER_YES)
+    {
+        if(db.exeSQL(sentence)==false)
+        {
+            cout<<"执行sql语句失败"<<endl;
+            flags=REGISTER_NO;
+        }
+    }
+    if(server.server_send(conn_fd,NULL,0,flags)==false)
+    {
+        cout<<"向客户端发送数据失败"<<endl;
+        return false;
+    }
+
+
+    return true;
+
+}
+
+
+bool TCPServer::dealwithpacket(TCPServer &server,int conn_fd, char *recv_data,uint16_t wOpcode,int datasize)  //处理接收到的数据
+{
+
+    if(wOpcode==LOGIN)  //登录
+    {
+        if(Login(server,conn_fd,recv_data)==false)
+        {
+            cout<<"登录处理失败"<<endl;
+            return false;
+        }
+    }
+    else if(wOpcode==REGISTER)  //注册
+    {
+        if(Register(server,conn_fd,recv_data)==false)
+        {
+            cout<<"注册处理失败"<<endl;
+            return false;
+        }
+    }
+
+
+    return true;
+
+}
+
+bool TCPServer::server_send(int conn_fd, char send_buf[10000],int datasize,uint16_t wOpcode) //发送数据
+{
+    NetPacket send_packet;  //数据包
+    send_packet.Header.wDataSize=datasize+sizeof(NetPacketHeader); //数据包大小
+    send_packet.Header.wOpcode=wOpcode;
+
+    memcpy(send_packet.Data,send_buf,datasize); //数据拷贝
+
+    if(send(conn_fd,&send_packet,send_packet.Header.wDataSize,0))
+    return true;
+    else
+    return false;
+}
+
+bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
 {
     int nrecvsize=0; //一次接收到的数据大小
     int sum_recvsize=0; //总共收到的数据大小
     int packersize;   //数据包总大小
     int datasize;     //数据总大小
-    unsigned char recv_buffer[10000];  //接收数据的buffer
-
+    char recv_buffer[10000];  //接收数据的buffer
 
     memset(recv_buffer,0,sizeof(recv_buffer));  //初始化接收buffer
 
@@ -201,10 +342,10 @@ bool TCPServer::server_recv(int conn_fd)  //接收数据函数
     }
 
 
-
     NetPacketHeader *phead=(NetPacketHeader*)recv_buffer;
     packersize=phead->wDataSize;  //数据包大小
     datasize=packersize-sizeof(NetPacketHeader);     //数据总大小
+
 
 
 
@@ -221,13 +362,13 @@ bool TCPServer::server_recv(int conn_fd)  //接收数据函数
     }
 
 
-    dealwithpacket(conn_fd,(unsigned char*)(phead+1),phead->wOpcode,datasize);  //处理接收到的数据
+    dealwithpacket(server,conn_fd,(char*)(phead+1),phead->wOpcode,datasize);  //处理接收到的数据
 
 
 
 }
 
-void TCPServer::run()  //主执行函数
+void TCPServer::run(TCPServer &server)  //主执行函数
 {
     while(1)   //循环监听事件
     {
@@ -243,7 +384,7 @@ void TCPServer::run()  //主执行函数
             else if(events[i].events&EPOLLIN)    //客户端发来数据
             {
 
-                server_recv(events[i].data.fd);  //接收数据包并做处理
+                server_recv(server,events[i].data.fd);  //接收数据包并做处理
 
             }
             if(events[i].events&EPOLLRDHUP) //客户端退出
@@ -258,7 +399,7 @@ void TCPServer::run()  //主执行函数
 int main()
 {
     TCPServer server;
-    server.run();
+    server.run(server);
 
     return 0;
 }

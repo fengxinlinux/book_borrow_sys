@@ -31,6 +31,7 @@
 
 using namespace std;
 
+
 class TCPClient
 {
     public:
@@ -38,7 +39,7 @@ class TCPClient
     TCPClient(int argc ,char** argv);
     ~TCPClient();
 
-    unsigned char data_buffer[10000];    //存放发送和接收数据的buffer
+    char data_buffer[10000];    //存放发送和接收数据的buffer
 
 
     //向服务器发送数据
@@ -60,19 +61,20 @@ class TCPClient
 
 TCPClient::TCPClient(int argc,char **argv)  //构造函数
 {
+
     if(argc!=3)    //检测输入参数个数是否正确
     {
         cout<<"Usage: [-a] [serv_address]"<<endl;
         exit(1);
     }
 
-    memcpy(data_buffer,0,sizeof(data_buffer));  //初始化buffer
+    memset(data_buffer,0,sizeof(data_buffer));  //初始化buffer
 
     //初始化服务器地址结构
     memset(&serv_addr,0,sizeof(struct sockaddr_in));
     serv_addr.sin_family=AF_INET;
     serv_addr.sin_port=htons(PORT);
-
+    
     //从命令行服务器地址
     for(int i=0;i<argc;i++)
     {
@@ -103,6 +105,7 @@ TCPClient::TCPClient(int argc,char **argv)  //构造函数
     {
         my_err("connect",__LINE__);
     }
+    
 
     //向服务器发送连接请求
     if(connect(conn_fd,(struct sockaddr*)&serv_addr,sizeof(struct sockaddr))<0)
@@ -124,7 +127,6 @@ bool TCPClient::send_to_serv(int datasize,uint16_t wOpcode) //向服务器发送
     send_packet.Header.wDataSize=datasize+sizeof(NetPacketHeader);  //数据包大小
     send_packet.Header.wOpcode=wOpcode;
 
-    memcpy(data_buffer,0,sizeof(data_buffer));  //初始化buffer
 
     memcpy(send_packet.Data,data_buffer,datasize);  //数据拷贝
 
@@ -144,14 +146,14 @@ bool TCPClient::recv_from_serv()   //从服务器接收数据
     int datasize;     //数据总大小
 
 
-    memcpy(data_buffer,0,sizeof(data_buffer));   ///初始化buffer
+    memset(data_buffer,0,sizeof(data_buffer));   ///初始化buffer
 
       while(sum_recvsize!=sizeof(NetPacketHeader))
     {
         nrecvsize=recv(conn_fd,data_buffer+sum_recvsize,sizeof(NetPacketHeader)-sum_recvsize,0);
         if(nrecvsize==0)
         {
-            //客户端退出;
+            //服务器退出;
             return false;
         }
         if(nrecvsize<0)
@@ -187,6 +189,12 @@ bool TCPClient::recv_from_serv()   //从服务器接收数据
 
 }
 
+//函数声明:
+bool inputpasswd(string &passwd);   //无回显输入密码
+void Login_Register(TCPClient client);    //登录注册函数
+
+
+
 bool inputpasswd(string &passwd)   //无回显输入密码
 {
     struct termios tm,tm_old;
@@ -211,6 +219,7 @@ bool inputpasswd(string &passwd)   //无回显输入密码
 
 void Login_Register(TCPClient client)   //登录注册函数
 {
+
     string choice;           //记录选择
     int choice_right=1;     //判断输入选项是否正确
     string name;               
@@ -235,10 +244,11 @@ void Login_Register(TCPClient client)   //登录注册函数
             cin>>name;
             cout<<"请输入密码:"; 
             inputpasswd(passwd);
+            cout<<endl;
             accounts["name"]=name.c_str();           //加入json对象中
             accounts["passwd"]=passwd.c_str();
             string out=accounts.toStyledString();
-            memcpy(client.data_buffer,out.c_str(),out.size());
+            memcpy(client.data_buffer,out.c_str(),out.size());   //拷贝到数据buffer
             if(client.send_to_serv(out.size(),LOGIN)==false)  //向服务器发送数据
             {
                 cout<<"向服务器发送数据失败"<<endl;
@@ -257,7 +267,7 @@ void Login_Register(TCPClient client)   //登录注册函数
             }
             else
             {
-                cout<<"登录失败"<<endl;
+                cout<<"登录失败，帐号或密码错误"<<endl;
             }
 
 
@@ -268,20 +278,27 @@ void Login_Register(TCPClient client)   //登录注册函数
             cout<<"请输入要注册的帐号:";
             cin>>name;
             cout<<"请设置密码:";
-            cin>>passwd;
+            inputpasswd(passwd);
+            cout<<endl;
             cout<<"请再次输入密码:";
-            cin>>passwd1;
+            inputpasswd(passwd1);
+            cout<<endl;
             while(passwd!=passwd1)
             {
                 cout<<"两次输入的密码不同，请重新设置密码。"<<endl;
                 cout<<"请设置密码:";
-                cin>>passwd;
+                inputpasswd(passwd);
+                cout<<endl;
                 cout<<"请再次输入密码:";
-                cin>>passwd1;
+                inputpasswd(passwd1);
+                cout<<endl;
             }
             accounts["name"]=name.c_str();
             accounts["passwd"]=passwd.c_str();
             string out=accounts.toStyledString();
+            memcpy(client.data_buffer,out.c_str(),out.size());  //拷贝到数据buffer中
+
+
             if(client.send_to_serv(out.size(),REGISTER)==false)  //向服务器发送数据
             {
                 cout<<"向服务器发送数据失败"<<endl;
@@ -300,7 +317,7 @@ void Login_Register(TCPClient client)   //登录注册函数
             }
             else
             {
-                cout<<"注册失败"<<endl;
+                cout<<"注册失败,该帐号已被注册"<<endl;
             }
             
         }
@@ -327,6 +344,8 @@ int main(int argc ,char **argv)
 {
 
     TCPClient client(argc,argv);
+
+
     client.run(client);
 
 }
