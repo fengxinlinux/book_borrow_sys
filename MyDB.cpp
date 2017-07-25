@@ -37,8 +37,8 @@ bool MyDB::initDB(string host,string user,string passwd,string db_name)
     mysql = mysql_real_connect(mysql, host.c_str(), user.c_str(), passwd.c_str(), db_name.c_str(), 0, NULL, 0);  
     if(mysql == NULL)  
     {  
-        cout << "Error: " << mysql_error(mysql);  
-        exit(1);  
+        cout << "Error: connect mysql" << mysql_error(mysql);  
+        return false;  
     }  
     return true;  
 }
@@ -54,7 +54,7 @@ bool MyDB::exeSQL(string sql)
     else // 查询成功
     {
         result = mysql_store_result(mysql);  //获取结果集
-        if (result)  // 结果集中有数据
+      /*  if (result)  // 返回了结果集
         {
            int  num_fields = mysql_num_fields(result);   //获取结果集中总共的字段数，即列数
            int  num_rows=mysql_num_rows(result);       //获取结果集中总共的行数
@@ -84,8 +84,8 @@ bool MyDB::exeSQL(string sql)
                 cout<<"Get result error: "<<mysql_error(mysql);
                 return false;
             }
-        }
-    }
+        } */
+    } 
 
     return true;
 
