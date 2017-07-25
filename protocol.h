@@ -21,7 +21,7 @@ struct NetPacketHeader
 struct NetPacket
 {
     NetPacketHeader     Header;                         ///< 包头
-    unsigned char       Data[NET_PACKET_DATA_SIZE];     ///< 数据
+    char       Data[NET_PACKET_DATA_SIZE];     ///< 数据
 };
 
 
