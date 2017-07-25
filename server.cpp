@@ -1,8 +1,8 @@
 /*************************************************************************
-	> File Name: server3.cpp
+	> File Name: server2.cpp
 	> Author:fengxin 
 	> Mail:903087053@qq.com 
-	> Created Time: 2017年07月25日 星期二 10时26分10秒
+	> Created Time: 2017年07月25日 星期二 08时08分28秒
  ************************************************************************/
 
 #include<iostream>
@@ -45,7 +45,7 @@ class TCPServer
     void acceptClient();
 
     /// 关闭客户端
-    void closeClient(int i);
+    void closeClient(int conn_fd);
     //处理接收到的数据
     bool dealwithpacket(TCPServer &server,int conn_fd,char *recv_data,uint16_t wOpcode,int datasize);
 
@@ -53,14 +53,13 @@ class TCPServer
     bool server_send(int conn_fd,char send_buf[10000],int datasize,uint16_t wOpcode); //发送数据函数
 
     void run(TCPServer &server);  //运行函数
-    friend bool Login(int conn_fd,char * recv_data);    //登录函数 
-    friend bool Register(int conn_fd,char *recv_data);  //注册函数
 
+    int epollfd;  //epoll监听描述符
     private:
 
     int sock_fd;  //监听套接字
     int conn_fd;    //连接套接字
-    int epollfd;  //epoll监听描述符
+   // int epollfd;  //epoll监听描述符
     socklen_t cli_len;  //记录连接套接字地址的大小
     struct epoll_event  event;   //epoll监听事件
     struct epoll_event*  events;  //epoll监听事件结果集合指针
@@ -122,9 +121,25 @@ TCPServer::TCPServer()  //构造函数
 TCPServer::~TCPServer()   //析构函数
 {
     close(sock_fd);    //关闭监听套接字
+    close(epollfd);   //关闭epoll描述符
     free(events);  //释放事件集空间
     cout<<"服务器成功退出"<<endl;
 }
+
+//线程参数结构体
+struct pthread_arg
+{
+    public:
+    TCPServer &server;
+    int conn_fd;
+    pthread_arg(TCPServer &server1);
+
+};
+
+pthread_arg::pthread_arg(TCPServer &server1):server(server1),conn_fd(0){}   //线程参数类构造函数
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;   //创建并初始化一个线程互斥锁
+
 
 void TCPServer::acceptClient()      //接受客户端连接请求
 {
@@ -133,7 +148,7 @@ void TCPServer::acceptClient()      //接受客户端连接请求
     {
         my_err("accept",__LINE__);
     }
-    event.events = EPOLLIN | EPOLLRDHUP; //监听连接套接字的可读和退出
+    event.events = EPOLLIN  |  EPOLLONESHOT; //监听连接套接字的可读
     event.data.fd = conn_fd;
     if(epoll_ctl(epollfd,EPOLL_CTL_ADD,conn_fd,&event)<0) //将新连接的套接字加入监听
     {
@@ -143,11 +158,11 @@ void TCPServer::acceptClient()      //接受客户端连接请求
 }
 
 
-void TCPServer::closeClient(int i)     //处理客户端退出
+void TCPServer::closeClient(int conn_fd)     //处理客户端退出
 {
-    cout<<"a connet is quit,ip is "<<inet_ntoa(cli_addr.sin_addr)<<endl;
-    epoll_ctl(epollfd,EPOLL_CTL_DEL,events[i].data.fd,&event);
-    close(events[i].data.fd);
+    cout<<"a connet is quit "<<endl;
+    epoll_ctl(epollfd,EPOLL_CTL_DEL,conn_fd,&event);
+    close(conn_fd);
 
 }
 
@@ -155,8 +170,19 @@ void TCPServer::closeClient(int i)     //处理客户端退出
     //
 bool Login(TCPServer &server,int conn_fd,char *recv_data);   //登录处理函数
 bool Register(TCPServer &server,int conn_fd,char *recv_data);   //注册处理函数
+void reset_oneshot(int epollfd,int fd);   //重置conn_fd上的EPOLLONESHOT事件
+void* threadFunc(void *arg);  //线程处理函数
 
 
+
+//重置fd上的EPOLLONESHOT事件
+void reset_oneshot( int epollfd, int fd )
+{
+    epoll_event event;
+    event.data.fd = fd;
+    event.events = EPOLLIN  | EPOLLONESHOT ;
+    epoll_ctl( epollfd, EPOLL_CTL_MOD, fd, &event );
+}
 
 bool Login(TCPServer &server,int conn_fd,char *recv_data)   //登录
 {
@@ -274,6 +300,29 @@ bool Register(TCPServer &server,int conn_fd,char* recv_data)    //注册
 }
 
 
+void* threadFunc(void *arg)   //线程处理函数
+{
+
+    pthread_mutex_lock(&mutex);  //加锁
+    //将参数结构体的内容复制
+    struct pthread_arg p=*((struct pthread_arg*)arg);
+    pthread_mutex_unlock(&mutex);  //解锁
+
+    pthread_detach(pthread_self());   //将线程设置成detached状态，该线程运行结束后会自动释放所有资源
+
+    //执行服务器接收处理函数
+    p.server.server_recv(p.server,p.conn_fd);
+
+
+    //重置conn_fd上的EPOLLONESHOT事件
+
+    reset_oneshot(p.server.epollfd,p.conn_fd);
+
+    pthread_exit(NULL);
+
+} 
+
+
 bool TCPServer::dealwithpacket(TCPServer &server,int conn_fd, char *recv_data,uint16_t wOpcode,int datasize)  //处理接收到的数据
 {
 
@@ -326,16 +375,16 @@ bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
 
     while(sum_recvsize!=sizeof(NetPacketHeader))
     {
-
         nrecvsize=recv(conn_fd,recv_buffer+sum_recvsize,sizeof(NetPacketHeader)-sum_recvsize,0);
         if(nrecvsize==0)
         {
-            //客户端退出;
+            //处理客户端退出;
+            server.closeClient(conn_fd);
             return false;
         }
         if(nrecvsize<0)
         {
-            cout<<"从客户端接收数据失败"<<endl;
+            cout<<"从客户端接收数据失败:1"<<endl;
             return false;
         }
         sum_recvsize+=nrecvsize;
@@ -357,9 +406,10 @@ bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
         if(nrecvsize==0)
         {
             //客户端退出
+            server.closeClient(conn_fd);
             return false;
         }
-        if(nrecvsize<0)
+        else if(nrecvsize<0)
         {
             cout<<"从客户端接收数据失败"<<endl;
             return false;
@@ -376,10 +426,16 @@ bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
 
 void TCPServer::run(TCPServer &server)  //主执行函数
 {
+    pthread_t tt;
+    pthread_arg p(server);
+
     while(1)   //循环监听事件
     {
+
         int sum=0,i;
         sum=epoll_wait(epollfd,events,EPOLL_SIZE,-1);
+
+
         for(i=0;i<sum;i++)
         {
             if(events[i].data.fd==sock_fd)    //客户端请求连接
@@ -389,13 +445,16 @@ void TCPServer::run(TCPServer &server)  //主执行函数
             }
             else if(events[i].events&EPOLLIN)    //客户端发来数据
             {
+                pthread_mutex_lock(&mutex);     //加锁
+                p.conn_fd=events[i].data.fd;
+                pthread_mutex_unlock(&mutex);   //解锁
 
-                server_recv(server,events[i].data.fd);  //接收数据包并做处理
+                if(pthread_create(&tt,NULL,threadFunc,(void*)&p)<0)
+                {
+                    cout<<"创建线程失败"<<endl;
+                    return ;
+                }    
 
-            }
-            if(events[i].events&EPOLLRDHUP) //客户端退出
-            {
-                closeClient(i);    //处理客户端退出
             }
 
         }
