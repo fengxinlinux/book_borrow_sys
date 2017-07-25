@@ -59,7 +59,6 @@ class TCPServer
 
     int sock_fd;  //监听套接字
     int conn_fd;    //连接套接字
-   // int epollfd;  //epoll监听描述符
     socklen_t cli_len;  //记录连接套接字地址的大小
     struct epoll_event  event;   //epoll监听事件
     struct epoll_event*  events;  //epoll监听事件结果集合指针
@@ -454,9 +453,7 @@ void TCPServer::run(TCPServer &server)  //主执行函数
                     cout<<"创建线程失败"<<endl;
                     return ;
                 }    
-
             }
-
         }
     }
 }
