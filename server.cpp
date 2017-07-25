@@ -1,9 +1,9 @@
 /*************************************************************************
-> File Name: server.cpp
-> Author:fengxin 
-> Mail:903087053@qq.com 
-> Created Time: 2017年07月22日 星期六 10时36分50秒
-************************************************************************/
+	> File Name: server3.cpp
+	> Author:fengxin 
+	> Mail:903087053@qq.com 
+	> Created Time: 2017年07月25日 星期二 10时26分10秒
+ ************************************************************************/
 
 #include<iostream>
 #include<cstring>
@@ -326,6 +326,7 @@ bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
 
     while(sum_recvsize!=sizeof(NetPacketHeader))
     {
+
         nrecvsize=recv(conn_fd,recv_buffer+sum_recvsize,sizeof(NetPacketHeader)-sum_recvsize,0);
         if(nrecvsize==0)
         {
@@ -354,6 +355,11 @@ bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
     {
         nrecvsize=recv(conn_fd,recv_buffer+sum_recvsize,packersize-sum_recvsize,0);
         if(nrecvsize==0)
+        {
+            //客户端退出
+            return false;
+        }
+        if(nrecvsize<0)
         {
             cout<<"从客户端接收数据失败"<<endl;
             return false;
