@@ -12,4 +12,6 @@ The main problems I encountered in writing this were the using of JSONcpp,mysql,
 
 I am deeply aware that encapsulation is not a simple matter.
 
+The header files and makefile files needed to compile are stored under the this repository.
+
 Your valuable opinions are welcome!
