@@ -1,9 +1,9 @@
 /*************************************************************************
-> File Name: MyDB.cpp
-> Author:fengxin 
-> Mail:903087053@qq.com 
-> Created Time: 2017年07月21日 星期五 16时02分51秒
-************************************************************************/
+	> File Name: MyDB.cpp
+	> Author: yanyuchen
+	> Mail: 794990923@qq.com
+	> Created Time: 2017年08月01日 星期二 10时28分09秒
+ ************************************************************************/
 
 #include<iostream>
 #include<string>
@@ -19,6 +19,9 @@ MyDB::MyDB()
         cout<<"Error:"<<mysql_error(mysql);
         exit(1);
     }
+    
+    result=NULL;
+
 }
 
 MyDB::~MyDB()
@@ -33,13 +36,15 @@ MyDB::~MyDB()
 bool MyDB::initDB(string host,string user,string passwd,string db_name)
 {
     // 函数mysql_real_connect建立一个数据库连接  
-    // 成功返回MYSQL*连接句柄，失败返回NULL  
+    // 成功返回MYSQL*连接句柄，失败返回NULL
+
     mysql = mysql_real_connect(mysql, host.c_str(), user.c_str(), passwd.c_str(), db_name.c_str(), 0, NULL, 0);  
     if(mysql == NULL)  
     {  
         cout << "Error: connect mysql" << mysql_error(mysql);  
         return false;  
-    }  
+    }
+
     return true;  
 }
 
@@ -63,7 +68,6 @@ bool MyDB::exeSQL(string sql)
                 //获取下一行数据
                 row=mysql_fetch_row(result);
                 if(row<0) break;
-
                 for(int j=0;j<num_fields;j++)  //输出每一字段
                 {
                     cout<<row[j]<<"\t\t";
@@ -90,9 +94,3 @@ bool MyDB::exeSQL(string sql)
     return true;
 
 }
-
-
-
-
-
-

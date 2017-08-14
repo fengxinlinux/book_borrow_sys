@@ -482,7 +482,7 @@ bool TCPServer::server_recv(TCPServer &server,int conn_fd)  //接收数据函数
         }
         if(nrecvsize<0)
         {
-            cout<<"从客户端接收数据失败:1"<<endl;
+            cout<<"从客户端接收数据失败"<<endl;
             return false;
         }
         sum_recvsize+=nrecvsize;
