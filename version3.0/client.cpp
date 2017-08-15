@@ -196,7 +196,8 @@ void Login_Register(TCPClient &client);    //登录注册函数
 void menu(TCPClient &client);  //用户菜单函数
 void Admin_menu(TCPClient &client); //管理员菜单函数
 bool search_book(TCPClient &client);   //搜索指定图书函数
-
+int  ret_waring_num(TCPClient &client);   //需要提醒还书的个数
+bool ret_waring(TCPClient &client);    //还书提醒函数
 
 
 
@@ -1540,6 +1541,77 @@ bool search_book(TCPClient &client)   //搜索指定图书
 }
 
 
+int ret_waring_num(TCPClient &client)   //查询需要提示还书的个数
+{
+    int sum=0;
+    if(client.send_to_serv(0,RET_WARING_NUM)<0)
+    {
+        cout<<"向服务器发送数据失败"<<endl;
+        return 0;
+    }
+    Json::Value book;
+    Json::Reader reader;
+    if(client.recv_from_serv()<0)
+    {
+        cout<<"从服务器接收数据"<<endl;
+    }
+
+    NetPacketHeader* phead=(NetPacketHeader*)client.data_buffer;
+    if(phead->wOpcode==RET_WARING_NUM)
+    {
+        string str((char*)(phead+1));
+        reader.parse(str,book);
+        sum=book["ret_waring_num"].asInt();
+    }
+    return sum;
+    
+}
+
+bool ret_waring(TCPClient & client)    //还书提醒函数
+{
+    if(client.send_to_serv(0,RET_WARING)<0)
+    {
+        cout<<"向服务器发送数据失败"<<endl;
+        return 0;
+    }
+
+    cout<<"\n需要5天之内归还的图书:\n"<<endl;
+    cout<<"ISBN           图书名称           借阅日期         归还日期 "<<endl;
+    while(1)
+    {
+        Json::Value book;
+        Json::Reader reader;
+        if(client.recv_from_serv()<0)
+        {
+            cout<<"从服务器接收数据失败"<<endl;
+            return false;
+        }
+        NetPacketHeader* phead = (NetPacketHeader*) client.data_buffer;
+        if(phead->wOpcode==RET_WARING_YES)
+        {
+            string str=((char*)(phead+1));
+            if(reader.parse(str,book)<0)
+            {
+                cout<<"json 解析失败"<<endl;
+                return false;
+            }
+
+            cout << book["ISBN"].asString() <<"\t"
+            << book["book_name"].asString() << "\t"
+            << book["borrow_date"].asString() << "\t"
+            << book["ret_date"].asString() << endl;
+        }
+        else if(phead->wOpcode == RET_WARING_NO)
+        {
+            cout<<"查询失败"<<endl;
+            return false;
+        }
+        else if(phead->wOpcode == RET_WARING_END){
+            return true;
+        }
+    }
+}
+
 
 void Admin_menu(TCPClient &client) //管理员菜单
 {
@@ -1576,18 +1648,38 @@ void Admin_menu(TCPClient &client) //管理员菜单
 void menu(TCPClient &client) 
 {
     int choice;
+    int sum=0;   //需要还书提醒的图书个数
+    int ret_waring_flag=0;     //是否调用过还书提醒函数的标志
     while (1) {
         system("clear");
-        cout<<"\t\t\t欢迎进入功能界面:"<<endl;
-        cout<<"\t\t\t1.查询个人资料"<<endl;
-        cout<<"\t\t\t2.查询所有书籍信息"<<endl;
-        cout<<"\t\t\t3.借阅图书"<<endl;
-        cout<<"\t\t\t4.归还图书"<<endl;
-        cout<<"\t\t\t5.搜索图书(ISBN/名称/作者/出版社)" << endl;
-        cout<<"\t\t\t6.还书提醒"
-        cout<<"\t\t\t7.聊天"<<endl;
-        cout<<"\t\t\t8.退出"<<endl;
-        cout<<"\n请输入选择序号:";
+        sum=ret_waring_num(client);
+
+        if(sum==0||ret_waring_flag)
+        {
+            cout<<"\t\t\t欢迎进入功能界面:"<<endl;
+            cout<<"\t\t\t1.查询个人资料"<<endl;
+            cout<<"\t\t\t2.查询所有书籍信息"<<endl;
+            cout<<"\t\t\t3.借阅图书"<<endl;
+            cout<<"\t\t\t4.归还图书"<<endl;
+            cout<<"\t\t\t5.搜索图书(ISBN/名称/作者/出版社)" << endl;
+            cout<<"\t\t\t6.还书提醒"<<endl;
+            cout<<"\t\t\t7.聊天"<<endl;
+            cout<<"\t\t\t8.退出"<<endl;
+            cout<<"\n请输入选择序号:";
+        }
+        else
+        {
+            cout<<"\t\t\t欢迎进入功能界面:"<<endl;
+            cout<<"\t\t\t1.查询个人资料"<<endl;
+            cout<<"\t\t\t2.查询所有书籍信息"<<endl;
+            cout<<"\t\t\t3.借阅图书"<<endl;
+            cout<<"\t\t\t4.归还图书"<<endl;
+            cout<<"\t\t\t5.搜索图书(ISBN/名称/作者/出版社)" << endl;
+            cout<<"\t\t\t6.还书提醒\e[1;31m["<<sum<<"]\e[0m"<<endl;
+            cout<<"\t\t\t7.聊天"<<endl;
+            cout<<"\t\t\t8.退出"<<endl;
+            cout<<"\n请输入选择序号:";
+        }
         cin >> choice;
 
         switch (choice)
@@ -1597,7 +1689,7 @@ void menu(TCPClient &client)
             case 3: borrow_book(client); break;
             case 4: ret_book(client); break;
             case 5: search_book(client); break;
-            case 6:break;
+            case 6:ret_waring_flag=1; ret_waring(client);  break;
             case 7:break;
             case 8: cout<<"Bye"<<endl;      exit(1);
         }

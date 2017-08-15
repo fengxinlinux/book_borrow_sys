@@ -189,6 +189,8 @@ void TCPServer::closeClient(int conn_fd)     //处理客户端退出
     void* threadFunc(void *arg);  //线程处理函数
     bool Personal_data(TCPServer &server,int conn_fd,char *recv_data);  //查看个人信息函数
     bool search_book(TCPServer &server,int conn_fd,char *recv_data);   //搜索指定图书函数
+    bool ret_waring_num(TCPServer &server ,int conn_fd,char *recv_data);    //查询需要提醒还书的图书的个数
+    bool ret_waring(TCPServer &server, int conn_fd,char *recv_data);      //查询还书提醒函数
 
 
 
@@ -1193,6 +1195,142 @@ bool search_book(TCPServer &server,int conn_fd,char *recv_buffer)  //搜索指�
 
 }
 
+
+bool ret_waring_num(TCPServer &server, int conn_fd,char *recv_data)   //查询需要提醒还书的图书个数
+{
+    MyDB db;
+    Json::Value book;
+    char buffer[2000];
+    int sum=0;
+    if(db.initDB("localhost","root","fengxin","book_borrow_sys")==false)
+    {
+        cout<<"连接数据库失败"<<endl;
+        book["ret_waring_num"]=0;
+        string out=book.toStyledString();
+        memcpy(buffer,out.c_str(),out.size());
+        server.server_send(conn_fd,buffer,out.size(),RET_WARING_NUM);
+        return false;
+    }
+
+    //找到当前的帐号
+    string number="";
+    auto it = head.begin();
+    while (it != head.end()) 
+    {
+        if (it -> lsocket == conn_fd)
+        {
+            number = it->lnumber; 
+            break;
+        }
+        it++;
+    }
+
+    string sentence="select * from borrow_infor where account = " + number +" and datediff(ret_date,now())<5" + ";";
+
+    if(db.exeSQL(sentence) == false)
+    {
+        cout << "mysql语句出错"<<endl;
+        server.server_send(conn_fd,NULL,0,RET_WARING_NO);
+        return false;
+    }
+
+    if(db.result)
+    {
+        int num_fields = mysql_num_fields(db.result);
+        int num_rows = mysql_num_rows(db.result);
+        sum=num_rows;
+    }
+
+    book["ret_waring_num"]=sum;
+    string out=book.toStyledString();
+    memcpy(buffer,out.c_str(),out.size());
+    if(server.server_send(conn_fd,buffer,out.size(),RET_WARING_NUM)<0)
+    {
+        cout<<"向客户端发送发送数据失败"<<endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool ret_waring(TCPServer &server ,int conn_fd ,char *recv_data)  //还书提醒
+{
+    MyDB db;
+    Json::Value book;
+    char buffer[2000];
+    int sum=0;
+    if(db.initDB("localhost","root","fengxin","book_borrow_sys")==false)
+    {
+        cout<<"连接数据库失败"<<endl;
+        book["ret_waring_num"]=0;
+        string out=book.toStyledString();
+        memcpy(buffer,out.c_str(),out.size());
+        server.server_send(conn_fd,buffer,out.size(),RET_WARING_NUM);
+        return false;
+    }
+
+    //找到当前的帐号
+    string number="";
+    auto it = head.begin();
+    while (it != head.end()) 
+    {
+        if (it -> lsocket == conn_fd)
+        {
+            number = it->lnumber; 
+            break;
+        }
+        it++;
+    }
+
+    string sentence="select * from borrow_infor where account = " + number +" and datediff(ret_date,now())<5" + ";";
+
+    if(db.exeSQL(sentence) == false)
+    {
+        cout << "mysql语句出错"<<endl;
+        server.server_send(conn_fd,NULL,0,RET_WARING_NO);
+        return false;
+    }
+
+    if(db.result)
+    {
+
+        int num_fields = mysql_num_fields(db.result);
+        int num_rows = mysql_num_rows(db.result);
+        for(int i=0;i<num_rows;i++)
+        {
+            bzero(buffer,sizeof(buffer));
+            db.row=mysql_fetch_row(db.result);
+            book["ISBN"]=db.row[1];
+            book["book_name"]=db.row[2];
+            book["borrow_date"]=db.row[3];
+            book["ret_date"]=db.row[4];
+            string out = book.toStyledString();
+            memcpy(buffer,out.c_str(),out.size());
+            if(server.server_send(conn_fd,buffer,out.size(),RET_WARING_YES)<0)
+            {
+                cout<<"向客户端发送发送数据失败"<<endl;
+                return false;
+            }
+
+        }
+        if(server.server_send(conn_fd,NULL,0,RET_WARING_END)<0)
+        {
+            cout<<"向客户端发送发送数据失败"<<endl;
+            return false;
+        }
+    }
+    else
+    {
+        if(server.server_send(conn_fd,NULL,0,RET_WARING_END)<0)
+        {
+            cout<<"向客户端发送发送数据失败"<<endl;
+            return false;
+        }
+    }
+    return true;
+
+}
+
 bool TCPServer::dealwithpacket(TCPServer &server,int conn_fd, char *recv_data,uint16_t wOpcode,int datasize)  //处理接收到的数据
 {
 
@@ -1299,6 +1437,22 @@ bool TCPServer::dealwithpacket(TCPServer &server,int conn_fd, char *recv_data,ui
         if(search_book(server,conn_fd,recv_data) == false)
         {
             cout<<"图书搜索失败"<<endl;
+            return false;
+        }
+    }
+    else if(wOpcode == RET_WARING_NUM)   //查询需要提醒还书的图书个数
+    {
+        if(ret_waring_num(server,conn_fd,recv_data)==false)
+        {
+            cout<<"查询需要提醒还书的图书的个数失败"<<endl;
+            return false;
+        }
+    }
+    else if(wOpcode == RET_WARING)    //函数提醒
+    {
+        if(ret_waring(server,conn_fd,recv_data)==false)
+        {
+            cout<<"还书提醒失败"<<endl;
             return false;
         }
     }

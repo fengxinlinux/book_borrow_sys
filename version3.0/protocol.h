@@ -69,6 +69,11 @@ enum eNetOpcode
     SEARCH_BOOK_YES,    //搜索图书成功
     SEARCH_BOOK_NO,     //搜索图书失败
     SEARCH_BOOK_END,    //搜索图书结束
+    RET_WARING_NUM,     //提示还书的个数
+    RET_WARING,          //查询还书提醒
+    RET_WARING_YES,      //查询还书提醒成功
+    RET_WARING_NO,        //查询还书提醒失败
+    RET_WARING_END,       //查询还书提醒结束
 };
 
 
